@@ -1,3 +1,204 @@
+DOCUMENTACIÓN DEL JUEGO: INK BATTLE
+
+1. REQUERIMIENTOS FUNCIONALES
+
+Permitir crear una cuenta o iniciar sesión mediante correo electrónico, Google o Facebook.
+
+Permitir crear o unirse a partidas mediante un código de partida.
+
+Permitir seleccionar y personalizar un personaje.
+
+Permitir modificar la ropa, color de pelo, altura y estilo corporal del personaje.
+
+Permitir seleccionar un equipo y un color.
+
+Evitar que dos equipos tengan el mismo color.
+
+Permitir seleccionar diferentes mapas.
+
+Permitir utilizar un pincel mágico para crear armas, escudos y protecciones.
+
+Permitir atacar a los jugadores enemigos.
+
+Permitir defender la base propia.
+
+Tener un sistema de vida, daño y puntuación.
+
+Permitir que los jugadores revivan durante la partida.
+
+Impedir que los jugadores revivan después de que su núcleo haya sido destruido.
+
+Permitir destruir las protecciones y finalmente el núcleo de la base enemiga.
+
+Incluir un modo sin conexión contra bots con dificultad fácil, media y difícil.
+
+Mostrar al jugador información como vida, puntuación, equipo y estado del núcleo.
+
+
+
+---
+
+2. HISTORIA DEL JUEGO
+
+En un mundo donde la tinta tiene propiedades especiales, diferentes equipos compiten por controlar territorios utilizando un pincel capaz de convertir dibujos en objetos reales.
+
+Cada equipo posee una base protegida por estructuras de tinta y un núcleo que mantiene su energía. Los jugadores deben utilizar su creatividad para construir armas, escudos y defensas que les permitan atacar al equipo contrario.
+
+El objetivo principal es llegar hasta la base enemiga y destruir su núcleo. Sin embargo, mientras luchan, también deben proteger su propio núcleo, ya que al destruirlo el equipo pierde la posibilidad de revivir.
+
+Los jugadores tendrán que decidir si utilizan la tinta para atacar, defender o construir, creando diferentes estrategias para conseguir la victoria.
+
+
+---
+
+3. JUGABILIDAD ESPECIFICADA A DETALLE
+
+Inicio de la partida
+
+1. El jugador inicia sesión o crea una cuenta.
+
+
+2. Selecciona su personaje.
+
+
+3. Personaliza su apariencia.
+
+
+4. Selecciona un equipo.
+
+
+5. Elige el color disponible para su equipo.
+
+
+6. Selecciona un mapa.
+
+
+7. Puede crear una partida o ingresar mediante un código.
+
+
+
+Durante la partida
+
+Cada jugador comienza en la base de su equipo con una cantidad determinada de vida y un pincel.
+
+El pincel funciona como la herramienta principal del juego. Dependiendo de la acción realizada, el jugador puede crear:
+
+⚔️ Armas: para atacar enemigos.
+
+🛡️ Escudos: para bloquear ataques.
+
+🧱 Protecciones: para proteger la base.
+
+🏗️ Estructuras: para crear caminos, barreras u otras defensas.
+
+✨ Habilidades especiales: ataques o poderes únicos.
+
+
+Los recursos de tinta serán limitados, por lo que el jugador deberá decidir cómo utilizarlos.
+
+Combate
+
+Los jugadores pueden enfrentarse utilizando las armas creadas con el pincel. Al recibir ataques, disminuye su barra de vida.
+
+Cuando la vida llega a cero, el jugador queda fuera temporalmente y puede revivir después de un tiempo.
+
+Núcleo de la base
+
+Cada equipo tiene un núcleo protegido dentro de su base.
+
+Primero los jugadores enemigos deberán atravesar las defensas y llegar hasta el núcleo. El núcleo tendrá su propia barra de vida.
+
+Si el núcleo recibe suficiente daño y es destruido:
+
+El equipo pierde su protección principal.
+
+Sus jugadores ya no podrán revivir.
+
+Los jugadores que sean derrotados quedarán eliminados de la partida.
+
+El equipo contrario tendrá una gran ventaja para conseguir la victoria.
+
+
+Victoria
+
+El equipo gana cuando consigue destruir el núcleo enemigo.
+
+También se puede utilizar un sistema de puntuación para mostrar las eliminaciones, daño realizado, estructuras creadas y objetivos completados.
+
+Modo sin conexión
+
+El jugador podrá jugar sin conexión contra bots.
+
+Habrá tres dificultades:
+
+Fácil: los bots tendrán poca precisión y reaccionarán lentamente.
+
+Media: los bots atacarán y defenderán de manera equilibrada.
+
+Difícil: los bots utilizarán estrategias más avanzadas y protegerán activamente su núcleo.
+
+
+
+---
+
+4. ¿QUÉ PLATAFORMA SE VA A USAR?
+
+La plataforma principal será:
+
+PC / Computador con Windows 10 u 11.
+
+El juego estará diseñado principalmente para PC con teclado y mouse, y dispositivo celular 
+
+
+---
+
+5. ¿QUÉ LENGUAJE DE PROGRAMACIÓN SE VA A USAR?
+
+Se utilizará C# (C Sharp).
+C# será utilizado para programar:
+Movimiento de los personajes.
+Sistema de combate.
+Armas y habilidades.
+Sistema de vida.
+Puntuación.
+Respawn.
+Bots.
+Funcionamiento de las bases.
+Sistema del núcleo.
+Menús y opciones.
+Multijugador.
+
+
+
+---
+
+6. ¿QUÉ MOTOR DE PROGRAMACIÓN SE VA A USAR?
+
+Se utilizará Unity como motor de desarrollo del videojuego.
+Unity permitirá crear los escenarios, personajes, físicas, efectos, animaciones, combate y sistemas del juego.
+El proyecto utilizará Unity + C# como combinación principal de desarrollo.
+y open code
+
+---
+
+7. EL ENTORNO ESPECÍFICO
+
+El entorno de desarrollo estará compuesto por:
+Sistema operativo: Windows 10/11
+Motor: Unity
+Lenguaje: C#
+Editor de código: Visual Studio Code o Visual Studio
+Plataforma objetivo: PC
+Controles: teclado y mouse / control de Xbox
+Gráficos: 3D estilizado
+Modo de juego: multijugador y un jugador contra bots
+Conexión: internet para partidas multijugador; sin internet para el modo contra bots.
+Concepto general
+INK BATTLE será un juego 3D de combate por equipos donde la creatividad es el arma principal: los jugadores dibujan con su pincel para crear lo que necesitan durante la batalla.
+
+
+
+
 DOCUMENTACION: INK BATTLE
 
 
@@ -38,3 +239,4 @@ detección de impactos armas creadas, que vida va a tener el núcleo de protecci
 También se comprobará que el juego no presente errores durante las partidas, que los equipos se puedan unir por un código de partida
 que los equipo no elijan el mismo color, que pueda jugar sin conexión pero con bots en dificultad fácil media difícil, que los jugadores
 revivan y que al destruir el núcleo de su base al matarlos no puedan revivir.
+
