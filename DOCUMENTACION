@@ -1,0 +1,40 @@
+DOCUMENTACION: INK BATTLE
+
+
+#FUNCIONALIDAD:
+
+Juego de combate en el que los jugadores utilizar un pincel que pueda crear armas escudos protecciones para su base 
+habilidades especiales. Cada jugador puede atacar, defenderse y utilizar su armas lo que hayan creado para conseguir puntos 
+derrotar el núcleo de la base de la base de los enemigos cada equipo tendrá su base de distintos colores.
+
+#REQUISITOS:
+
+iniciar o crear cuenta, puede ser Gmail, Facebook.
+Computador gama media o dispositivo compatible.
+Teclado y mouse o controles ejemplo de Xbox.
+Conexión a internet para el modo multijugador. 
+El juego debe permitir seleccionar un personaje modificar su ropa color de pelo altura estilos de cuerpo.
+Debe elegir cada equipo un color y mapas.
+Sistema de vida y puntuación.
+
+
+
+#OBJETIVO:
+
+Derrotar a los oponentes utilizando estratégicamente lo creado con el pincel
+y destruir el núcleo de la base de los enemigos.
+
+
+#RESPONSABLE:
+
+Equipo de desarrollo: diseño, programación, creación de personajes
+escenarios, efectos y pruebas del videojuego.
+
+
+#PRUEBA:
+
+Se probará el funcionamiento de los controles, ataques, poderes, sistema de vida, puntuación vida
+detección de impactos armas creadas, que vida va a tener el núcleo de protección de las bases 
+También se comprobará que el juego no presente errores durante las partidas, que los equipos se puedan unir por un código de partida
+que los equipo no elijan el mismo color, que pueda jugar sin conexión pero con bots en dificultad fácil media difícil, que los jugadores
+revivan y que al destruir el núcleo de su base al matarlos no puedan revivir.
