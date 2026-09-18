@@ -2,37 +2,37 @@ DOCUMENTACIÓN DEL JUEGO: INK BATTLE
 
 1. REQUERIMIENTOS FUNCIONALES
 
-Permitir crear una cuenta o iniciar sesión mediante correo electrónico, Google o Facebook.
+Permitir crear una cuenta o iniciar sesión mediante correo electrónico, Google o Facebook. YA ESTA
 
-Permitir crear o unirse a partidas mediante un código de partida.
+Permitir crear o unirse a partidas mediante un código de partida. PROCESO
 
-Permitir seleccionar y personalizar un personaje.
+Permitir seleccionar y personalizar un personaje. PROCESO
 
-Permitir modificar la ropa, color de pelo, altura y estilo corporal del personaje.
+Permitir modificar la ropa, color de pelo, altura y estilo corporal del personaje. PROCESO
 
-Permitir seleccionar un equipo y un color.
+Permitir seleccionar un equipo y un color. PROCESO
 
-Evitar que dos equipos tengan el mismo color.
+Evitar que dos equipos tengan el mismo color. PROCESO
 
-Permitir seleccionar diferentes mapas.
+Permitir seleccionar diferentes mapas. PROCESO
 
-Permitir utilizar un pincel mágico para crear armas, escudos y protecciones.
+Permitir utilizar un pincel mágico para crear armas, escudos y protecciones. PROCESO
 
-Permitir atacar a los jugadores enemigos.
+Permitir atacar a los jugadores enemigos. PROCESO
 
-Permitir defender la base propia.
+Permitir defender la base propia. PROCESO
 
-Tener un sistema de vida, daño y puntuación.
+Tener un sistema de vida, daño y puntuación. PROCESO
 
-Permitir que los jugadores revivan durante la partida.
+Permitir que los jugadores revivan durante la partida. PROCESO
 
-Impedir que los jugadores revivan después de que su núcleo haya sido destruido.
+Impedir que los jugadores revivan después de que su núcleo haya sido destruido. PROCESO
 
-Permitir destruir las protecciones y finalmente el núcleo de la base enemiga.
+Permitir destruir las protecciones y finalmente el núcleo de la base enemiga. PROCESO
 
-Incluir un modo sin conexión contra bots con dificultad fácil, media y difícil.
+Incluir un modo sin conexión contra bots con dificultad fácil, media y difícil. PROCESO
 
-Mostrar al jugador información como vida, puntuación, equipo y estado del núcleo.
+Mostrar al jugador información como vida, puntuación, equipo y estado del núcleo. PROCESO
 
 
 
