@@ -37,18 +37,24 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
 
   if (!isOpen) return null;
 
-  const copyCode = () => {
-    navigator.clipboard.writeText(roomCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(roomCode);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+      setConnectionStatus('No se pudo copiar el código en este navegador.');
+    }
   };
 
   const handleJoinRoom = () => {
-    if (!joinCodeInput) return;
-    setConnectionStatus(`Conectando mediante Broker WebRTC P2P a sala ${joinCodeInput}...`);
-    setTimeout(() => {
-      setConnectionStatus(`¡Conectado exitosamente como Cliente a ${joinCodeInput}!`);
-    }, 1200);
+    const code = joinCodeInput.trim().toUpperCase();
+    if (!/^INK-\d{4}$/.test(code)) {
+      setConnectionStatus('Escribe un código válido con el formato INK-1234.');
+      return;
+    }
+    setConnectionStatus('La conexión en línea aún no está disponible. Puedes jugar sin conexión contra bots.');
   };
 
   return (
@@ -61,8 +67,8 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
               <Users className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-display font-bold text-lg text-slate-100">SISTEMA MULTIJUGADOR, MAPAS & BOTS IA</h2>
-              <p className="text-xs text-slate-400">Configura salas por código único o combate offline con IA escalable.</p>
+              <h2 className="font-display font-bold text-lg text-slate-100">SISTEMA MULTIJUGADOR, MAPAS Y BOTS CON IA</h2>
+              <p className="text-xs text-slate-400">Configura mapas, dificultad y cantidad de bots para partidas sin conexión.</p>
             </div>
           </div>
           <button
@@ -96,7 +102,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
             }`}
           >
             <Wifi className="w-4 h-4" />
-            <span>MODO ONLINE (SALAS P2P POR CÓDIGO)</span>
+            <span>MODO ONLINE (PRÓXIMAMENTE)</span>
           </button>
         </div>
 
@@ -194,7 +200,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
         {activeTab === 'online' && (
           <div className="space-y-4 my-2">
             <div className="bg-slate-950/80 border border-slate-800 p-4 rounded-2xl">
-              <span className="text-xs font-semibold text-slate-300 block mb-1">Tu Código Único de Sala (Host):</span>
+              <span className="text-xs font-semibold text-slate-300 block mb-1">Código de sala de demostración:</span>
               <div className="flex items-center gap-2">
                 <div className="bg-slate-900 border border-cyan-500/40 rounded-xl px-4 py-2 font-mono font-bold text-lg text-cyan-300 tracking-wider flex-1">
                   {roomCode}
@@ -215,7 +221,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                 </button>
               </div>
               <p className="text-[11px] text-slate-400 mt-2">
-                En GDevelop 5 esto utiliza la acción: <code className="text-cyan-400 font-mono">P2P::Connect(Broker, "INK-" + RandomInRange)</code>.
+                Las partidas en línea aún no están conectadas; este código no crea una sala real.
               </p>
             </div>
 
@@ -279,7 +285,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
         {/* FOOTER */}
         <div className="flex items-center justify-between pt-3 border-t border-slate-800">
           <div className="text-[11px] text-slate-500">
-            Dificultad seleccionada: <strong className="text-cyan-400 uppercase">{botDifficulty}</strong> | Mapa: <strong className="text-cyan-400">{selectedMap}</strong>
+            Dificultad seleccionada: <strong className="text-cyan-400">{botDifficulty === 'easy' ? 'Fácil' : botDifficulty === 'medium' ? 'Media' : 'Difícil'}</strong> | Mapa: <strong className="text-cyan-400">{MAPS_CATALOG.find((map) => map.id === selectedMap)?.name.split(':')[1]?.trim() || selectedMap}</strong>
           </div>
           <button
             id="btn-apply-lobby-match"

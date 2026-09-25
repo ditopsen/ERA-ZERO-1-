@@ -1,11 +1,12 @@
 import * as THREE from 'three';
-import { BotConfig, BotDifficulty, CraftedItem, MapId, PlayerCustomization, TeamId } from '../types';
+import { BotConfig, BotDifficulty, CraftedItem, DrawingPoint, MapId, PlayerCustomization, TeamId } from '../types';
 import { sounds } from './audio';
 
 export interface EngineCallbacks {
   onPlayerHpChange: (hp: number, maxHp: number) => void;
   onPlayerDied: (canRespawn: boolean, respawnSecs: number) => void;
   onCoreHpChange: (teamA_hp: number, teamB_hp: number, canRespawnA: boolean, canRespawnB: boolean) => void;
+  onCoreScreenPositionsChange: (coreA: { x: number; y: number; visible: boolean }, coreB: { x: number; y: number; visible: boolean }) => void;
   onKillFeed: (killer: string, victim: string, weapon: string) => void;
   onMatchEnd: (winner: TeamId, message: string) => void;
   onHazardTrigger: (active: boolean) => void;
@@ -16,9 +17,17 @@ export class ThreeGameEngine {
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
   private renderer: THREE.WebGLRenderer;
-  private clock: THREE.Clock;
+  private timer: THREE.Timer;
   private animationFrameId: number | null = null;
   private callbacks: EngineCallbacks;
+  private readonly mapRaycaster = new THREE.Raycaster();
+  private readonly botRespawnTimers = new Map<string, number>();
+  private hazardDamageTimer = 0;
+  private hazardSoundTimer = 0;
+  private isDisposed = false;
+  private isMatchEnded = false;
+  private isPaused = false;
+  private wasInHazard = false;
 
   // Player & Camera
   public playerGroup: THREE.Group;
@@ -32,8 +41,9 @@ export class ThreeGameEngine {
   private cameraPitch = 0.25;
   private cameraDistance = 9;
   private isGrounded = false;
-  private playerHp = 100;
-  private maxPlayerHp = 100;
+  private playerHp = 200;
+  private maxPlayerHp = 200;
+  private jumpBufferTime = 0;
   private isPlayerAlive = true;
   private playerRespawnTimer = 0;
 
@@ -57,11 +67,12 @@ export class ThreeGameEngine {
   private handlePointerLockChange: () => void;
   private handleMouseMove: (e: MouseEvent) => void;
   private handleResize: () => void;
+  private handleWindowBlur: () => void;
 
   // Game World & Map
   private currentMapId: MapId = 'nexus_citadel';
   private mapObjects: THREE.Object3D[] = [];
-  private jumpPads: { mesh: THREE.Mesh; pos: THREE.Vector3; radius: number }[] = [];
+  private jumpPads: { mesh: THREE.Mesh; pos: THREE.Vector3; radius: number; playerTouching: boolean }[] = [];
   private hazardZones: { mesh: THREE.Mesh; min: THREE.Vector3; max: THREE.Vector3; type: string }[] = [];
   private movingPlatforms: { mesh: THREE.Mesh; startY: number; amplitude: number; speed: number }[] = [];
 
@@ -108,18 +119,20 @@ export class ThreeGameEngine {
     this.customization = customization;
     this.currentMapId = mapId;
     this.callbacks = callbacks;
+    this.mapRaycaster.params.Line.threshold = 0.1;
 
     // Scene & Camera
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(65, container.clientWidth / container.clientHeight, 0.1, 1000);
-    this.clock = new THREE.Clock();
+    this.timer = new THREE.Timer();
+    this.timer.connect(document);
 
     // Renderer
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     container.appendChild(this.renderer.domElement);
 
     // Player Groups
@@ -179,6 +192,7 @@ export class ThreeGameEngine {
     // Clear old map
     for (const obj of this.mapObjects) {
       this.scene.remove(obj);
+      this.disposeObject(obj);
     }
     this.mapObjects = [];
     this.jumpPads = [];
@@ -399,7 +413,7 @@ export class ThreeGameEngine {
 
     this.scene.add(mesh);
     this.mapObjects.push(mesh);
-    this.jumpPads.push({ mesh, pos, radius: 2.5 });
+    this.jumpPads.push({ mesh, pos, radius: 2.5, playerTouching: false });
   }
 
   private createHazardZone(pos: THREE.Vector3, size: THREE.Vector3, type: string, color: number) {
@@ -605,15 +619,70 @@ export class ThreeGameEngine {
   }
 
   // --- CRAFTED ITEM MOUNTING ---
+  private buildTracedShapeMesh(item: CraftedItem) {
+    const paths = item.drawingPaths?.filter((path) => path.length > 1);
+    if (!paths?.length) return null;
+
+    const allPoints = paths.flat();
+    const minX = Math.min(...allPoints.map((point) => point.x));
+    const maxX = Math.max(...allPoints.map((point) => point.x));
+    const minY = Math.min(...allPoints.map((point) => point.y));
+    const maxY = Math.max(...allPoints.map((point) => point.y));
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const scale = 2.2 / Math.max(maxX - minX, maxY - minY, 1);
+    const radius = Math.max(0.025, scale * 7);
+    const color = new THREE.Color(item.color || '#06b6d4');
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 0.8,
+      metalness: 0.45,
+      roughness: 0.25
+    });
+    const tracedItem = new THREE.Group();
+
+    paths.forEach((path) => {
+      const vertices = path.map((point: DrawingPoint) => new THREE.Vector3(
+        (point.x - centerX) * scale,
+        (centerY - point.y) * scale,
+        0
+      ));
+      const isClosed = vertices[0].distanceTo(vertices[vertices.length - 1]) < 0.01;
+      const curve = new THREE.CatmullRomCurve3(vertices, isClosed, 'centripetal');
+      const segments = Math.min(256, Math.max(8, vertices.length * 4));
+      const geometry = new THREE.TubeGeometry(curve, segments, radius, 8, isClosed);
+      const stroke = new THREE.Mesh(geometry, material);
+      stroke.castShadow = true;
+      tracedItem.add(stroke);
+    });
+
+    if (item.type !== 'shield') tracedItem.rotation.x = Math.PI / 4;
+    return tracedItem;
+  }
+
   public equipCraftedItem(item: CraftedItem) {
     this.currentCraftedItem = item;
 
     // Remove existing weapon from slots
-    while (this.weaponSlotRight.children.length > 0) {
-      this.weaponSlotRight.remove(this.weaponSlotRight.children[0]);
+    for (const slot of [this.weaponSlotRight, this.weaponSlotLeft]) {
+      while (slot.children.length > 0) {
+        const child = slot.children[0];
+        child.traverse((object) => {
+          if (object instanceof THREE.Mesh) this.disposeObject(object);
+        });
+        slot.remove(child);
+      }
     }
-    while (this.weaponSlotLeft.children.length > 0) {
-      this.weaponSlotLeft.remove(this.weaponSlotLeft.children[0]);
+    this.equippedMesh = null;
+
+    const tracedMesh = this.buildTracedShapeMesh(item);
+    if (tracedMesh) {
+      const slot = item.type === 'shield' ? this.weaponSlotLeft : this.weaponSlotRight;
+      slot.add(tracedMesh);
+      this.equippedMesh = tracedMesh;
+      sounds.playCraftSuccess();
+      return;
     }
 
     if (item.type === 'sword') {
@@ -685,12 +754,9 @@ export class ThreeGameEngine {
   // --- EVENTS & INPUTS ---
   private setupEvents() {
     this.handleKeyDown = (e: KeyboardEvent) => {
+      if (this.isMatchEnded || this.isPaused || this.isDisposed || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       this.keys[e.code] = true;
-      if (e.code === 'Space' && this.isGrounded && this.isPlayerAlive) {
-        this.playerVelocity.y = 12;
-        this.isGrounded = false;
-        sounds.playJump();
-      }
+      if (e.code === 'Space' && this.isPlayerAlive) this.jumpBufferTime = 0.18;
     };
     
     this.handleKeyUp = (e: KeyboardEvent) => {
@@ -698,7 +764,7 @@ export class ThreeGameEngine {
     };
 
     this.handleMouseDown = (e: MouseEvent) => {
-      if (e.button === 0) {
+      if (e.button === 0 && !this.isMatchEnded && !this.isPaused) {
         this.isMouseDown = true;
       }
     };
@@ -728,10 +794,16 @@ export class ThreeGameEngine {
     };
 
     this.handleResize = () => {
-      if (!this.container) return;
+      if (!this.container || this.container.clientWidth === 0 || this.container.clientHeight === 0) return;
       this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+    };
+
+    this.handleWindowBlur = () => {
+      this.keys = {};
+      this.isMouseDown = false;
+      this.jumpBufferTime = 0;
     };
 
     window.addEventListener('keydown', this.handleKeyDown);
@@ -742,6 +814,7 @@ export class ThreeGameEngine {
     document.addEventListener('pointerlockchange', this.handlePointerLockChange);
     window.addEventListener('mousemove', this.handleMouseMove);
     window.addEventListener('resize', this.handleResize);
+    window.addEventListener('blur', this.handleWindowBlur);
   }
 
   // --- SHOOTING & COMBAT ---
@@ -776,9 +849,19 @@ export class ThreeGameEngine {
 
   // --- MAIN GAME LOOP ---
   private animate = () => {
+    if (this.isDisposed) return;
+    if (this.isMatchEnded) {
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
     this.animationFrameId = requestAnimationFrame(this.animate);
-    const delta = Math.min(this.clock.getDelta(), 0.08);
-    const elapsed = this.clock.getElapsedTime();
+    this.timer.update();
+    if (this.isPaused) {
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
+    const delta = Math.min(this.timer.getDelta(), 0.08);
+    const elapsed = this.timer.getElapsed();
 
     this.updateMovingPlatforms(elapsed);
     this.updateCores(elapsed);
@@ -820,6 +903,7 @@ export class ThreeGameEngine {
   }
 
   private updatePlayer(delta: number, elapsed: number) {
+    this.jumpBufferTime = Math.max(0, this.jumpBufferTime - delta);
     if (!this.isPlayerAlive) {
       if (this.canRespawnA) {
         this.playerRespawnTimer -= delta;
@@ -859,13 +943,47 @@ export class ThreeGameEngine {
 
     // Gravity
     this.playerVelocity.y -= 30 * delta;
+    const previousPosition = this.playerPosition.clone();
     this.playerPosition.addScaledVector(this.playerVelocity, delta);
+
+    const candidatePosition = this.playerPosition.clone();
+    this.playerPosition.copy(previousPosition);
+    this.playerPosition.y = candidatePosition.y;
+    const tryMoveAxis = (axis: 'x' | 'z') => {
+      const distance = candidatePosition[axis] - this.playerPosition[axis];
+      if (Math.abs(distance) < 0.0001) return;
+
+      const collisionOrigin = this.playerPosition.clone().add(new THREE.Vector3(0, 1, 0));
+      const direction = axis === 'x'
+        ? new THREE.Vector3(Math.sign(distance), 0, 0)
+        : new THREE.Vector3(0, 0, Math.sign(distance));
+      this.mapRaycaster.set(collisionOrigin, direction);
+      this.mapRaycaster.far = Math.abs(distance) + 0.45;
+      if (this.mapRaycaster.intersectObjects(this.mapObjects, true).length > 0) {
+        this.playerVelocity[axis] = 0;
+        return;
+      }
+
+      this.playerPosition[axis] = candidatePosition[axis];
+    };
+    tryMoveAxis('x');
+    tryMoveAxis('z');
 
     // Floor collision
     let floorLevel = 0;
     // Check bridge in Nexus Citadel
-    if (this.currentMapId === 'nexus_citadel' && Math.abs(this.playerPosition.x) < 10 && Math.abs(this.playerPosition.z) < 35) {
+    if (this.currentMapId === 'nexus_citadel' && this.playerPosition.y >= 4.75 && Math.abs(this.playerPosition.x) < 10 && Math.abs(this.playerPosition.z) < 35) {
       floorLevel = 4.75;
+    }
+    if (this.currentMapId === 'chroma_factory' && this.playerPosition.y >= 5.5 && Math.abs(this.playerPosition.x) < 40 && Math.abs(this.playerPosition.z) < 7) {
+      floorLevel = 5.5;
+    }
+    for (const platform of this.movingPlatforms) {
+      const platformTop = platform.mesh.position.y + 0.4;
+      if (this.playerPosition.y >= platformTop && this.playerPosition.y - platformTop < 1.2 &&
+        Math.hypot(this.playerPosition.x - platform.mesh.position.x, this.playerPosition.z - platform.mesh.position.z) < 4.5) {
+        floorLevel = Math.max(floorLevel, platformTop);
+      }
     }
     // Check void gardens islands
     if (this.currentMapId === 'void_gardens') {
@@ -882,15 +1000,24 @@ export class ThreeGameEngine {
       this.isGrounded = true;
     }
 
+    if (this.isGrounded && this.jumpBufferTime > 0 && this.isPlayerAlive) {
+      this.playerVelocity.y = 12;
+      this.isGrounded = false;
+      this.jumpBufferTime = 0;
+      sounds.playJump();
+    }
+
     // Jump pads check
     for (const pad of this.jumpPads) {
       const dist = this.playerPosition.distanceTo(pad.pos);
-      if (dist < pad.radius && Math.abs(this.playerPosition.y - pad.pos.y) < 1.5) {
+      const touching = dist < pad.radius && Math.abs(this.playerPosition.y - pad.pos.y) < 1.5 && this.playerVelocity.y <= 0;
+      if (touching && !pad.playerTouching) {
         this.playerVelocity.y = 25;
         this.isGrounded = false;
         sounds.playJump();
         this.createParticleBurst(this.playerPosition, 0x38bdf8, 15);
       }
+      pad.playerTouching = touching;
     }
 
     // Hazard Zones check (Damage over time)
@@ -902,12 +1029,28 @@ export class ThreeGameEngine {
         this.playerPosition.z >= h.min.z && this.playerPosition.z <= h.max.z
       ) {
         inHazard = true;
-        this.damagePlayer(15 * delta, 'Zona Corrosiva');
-        sounds.playHazardTick();
         break;
       }
     }
-    this.callbacks.onHazardTrigger(inHazard);
+    if (inHazard) {
+      this.hazardDamageTimer += delta;
+      this.hazardSoundTimer += delta;
+      if (this.hazardDamageTimer >= 0.25) {
+        this.damagePlayer(15 * this.hazardDamageTimer, 'Zona corrosiva');
+        this.hazardDamageTimer = 0;
+      }
+      if (this.hazardSoundTimer >= 0.5) {
+        sounds.playHazardTick();
+        this.hazardSoundTimer = 0;
+      }
+    } else {
+      this.hazardDamageTimer = 0;
+      this.hazardSoundTimer = 0;
+    }
+    if (inHazard !== this.wasInHazard) {
+      this.wasInHazard = inHazard;
+      this.callbacks.onHazardTrigger(inHazard);
+    }
 
     // Apply to group
     this.playerGroup.position.copy(this.playerPosition);
@@ -943,6 +1086,21 @@ export class ThreeGameEngine {
   }
 
   private updateBots(delta: number, elapsed: number) {
+    for (const [botId, respawnAt] of this.botRespawnTimers) {
+      const bot = this.bots.find((candidate) => candidate.config.id === botId);
+      if (!this.canRespawnB || !bot) {
+        this.botRespawnTimers.delete(botId);
+        continue;
+      }
+      if (elapsed >= respawnAt) {
+        bot.config.isAlive = true;
+        bot.config.hp = bot.config.maxHp;
+        bot.group.position.set((Math.random() - 0.5) * 20, 2, -55);
+        bot.group.visible = true;
+        this.botRespawnTimers.delete(botId);
+      }
+    }
+
     for (const b of this.bots) {
       if (!b.config.isAlive) continue;
 
@@ -965,7 +1123,20 @@ export class ThreeGameEngine {
         b.velocity.z *= 0.8;
       }
 
+      const previousPosition = b.group.position.clone();
       b.group.position.addScaledVector(b.velocity, delta);
+      const motion = b.group.position.clone().sub(previousPosition);
+      motion.y = 0;
+      if (motion.lengthSq() > 0) {
+        this.mapRaycaster.set(previousPosition.clone().add(new THREE.Vector3(0, 1, 0)), motion.clone().normalize());
+        this.mapRaycaster.far = motion.length() + 0.45;
+        if (this.mapRaycaster.intersectObjects(this.mapObjects, true).length > 0) {
+          b.group.position.x = previousPosition.x;
+          b.group.position.z = previousPosition.z;
+          b.velocity.x = 0;
+          b.velocity.z = 0;
+        }
+      }
 
       // Bot Shooting
       const distToPlayer = b.group.position.distanceTo(this.playerPosition);
@@ -1027,33 +1198,39 @@ export class ThreeGameEngine {
   private updateBullets(delta: number) {
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const b = this.bullets[i];
+      const previousPosition = b.mesh.position.clone();
       b.mesh.position.addScaledVector(b.velocity, delta);
       b.lifespan -= delta;
 
       let destroyed = false;
+      const travel = b.mesh.position.clone().sub(previousPosition);
+      const travelDistance = travel.length();
+      if (travelDistance > 0) {
+        this.mapRaycaster.set(previousPosition, travel.normalize());
+        this.mapRaycaster.far = travelDistance;
+        destroyed = this.mapRaycaster.intersectObjects(this.mapObjects, true).length > 0;
+      }
 
       // 1. Check Core A hit (Cyan base)
-      if (b.team !== 'cyan' && this.coreA_Hp > 0 && this.coreA_Mesh) {
-        const dist = b.mesh.position.distanceTo(new THREE.Vector3(0, 6, 60));
-        if (dist < 4.0) {
+      if (!destroyed && b.team !== 'cyan' && this.coreA_Hp > 0 && this.coreA_Mesh) {
+        if (this.segmentHitsSphere(previousPosition, b.mesh.position, new THREE.Vector3(0, 6, 60), 4.0)) {
           this.damageCore('cyan', b.damage);
           destroyed = true;
         }
       }
 
       // 2. Check Core B hit (Magenta base)
-      if (b.team !== 'magenta' && this.coreB_Hp > 0 && this.coreB_Mesh) {
-        const dist = b.mesh.position.distanceTo(new THREE.Vector3(0, 6, -60));
-        if (dist < 4.0) {
+      if (!destroyed && b.team !== 'magenta' && this.coreB_Hp > 0 && this.coreB_Mesh) {
+        if (this.segmentHitsSphere(previousPosition, b.mesh.position, new THREE.Vector3(0, 6, -60), 4.0)) {
           this.damageCore('magenta', b.damage);
           destroyed = true;
         }
       }
 
       // 3. Check Player hit
-      if (b.team !== 'cyan' && this.isPlayerAlive) {
-        const dist = b.mesh.position.distanceTo(this.playerPosition.clone().add(new THREE.Vector3(0, 1.2, 0)));
-        if (dist < 1.4) {
+      if (!destroyed && b.team !== 'cyan' && this.isPlayerAlive) {
+        const playerCenter = this.playerPosition.clone().add(new THREE.Vector3(0, 1.2, 0));
+        if (this.segmentHitsSphere(previousPosition, b.mesh.position, playerCenter, 1.4)) {
           let dmg = b.damage;
           // Shield mitigation
           if (this.currentCraftedItem?.type === 'shield') {
@@ -1066,11 +1243,11 @@ export class ThreeGameEngine {
       }
 
       // 4. Check Bots hit
-      if (b.team === 'cyan') {
+      if (!destroyed && b.team === 'cyan') {
         for (const bot of this.bots) {
           if (!bot.config.isAlive) continue;
-          const dist = b.mesh.position.distanceTo(bot.group.position.clone().add(new THREE.Vector3(0, 1.2, 0)));
-          if (dist < 1.4) {
+          const botCenter = bot.group.position.clone().add(new THREE.Vector3(0, 1.2, 0));
+          if (this.segmentHitsSphere(previousPosition, b.mesh.position, botCenter, 1.4)) {
             bot.config.hp -= b.damage;
             sounds.playHit();
             this.createParticleBurst(b.mesh.position, 0xec4899, 8);
@@ -1085,9 +1262,17 @@ export class ThreeGameEngine {
 
       if (destroyed || b.lifespan <= 0 || b.mesh.position.y < -10) {
         this.scene.remove(b.mesh);
+        this.disposeObject(b.mesh);
         this.bullets.splice(i, 1);
       }
     }
+  }
+
+  private segmentHitsSphere(start: THREE.Vector3, end: THREE.Vector3, center: THREE.Vector3, radius: number) {
+    const segment = end.clone().sub(start);
+    const lengthSquared = segment.lengthSq();
+    const t = lengthSquared === 0 ? 0 : THREE.MathUtils.clamp(center.clone().sub(start).dot(segment) / lengthSquared, 0, 1);
+    return start.clone().addScaledVector(segment, t).distanceToSquared(center) <= radius * radius;
   }
 
   private damageCore(team: TeamId, amount: number) {
@@ -1114,7 +1299,7 @@ export class ThreeGameEngine {
         // Check victory if no bots left alive
         const aliveBots = this.bots.filter(b => b.config.isAlive);
         if (aliveBots.length === 0) {
-          this.callbacks.onMatchEnd('cyan', '¡VICTORIA TOTAL! Base y enemigos aniquilados');
+          this.endMatch('cyan', '¡Victoria total! Base y enemigos eliminados.');
         }
       }
     }
@@ -1135,7 +1320,7 @@ export class ThreeGameEngine {
       if (!this.canRespawnA) {
         // PERMA-DEATH!
         this.callbacks.onPlayerDied(false, 0);
-        this.callbacks.onMatchEnd('magenta', 'DERROTA: Has muerto definitivamente sin Núcleo.');
+        this.endMatch('magenta', 'Derrota: has muerto definitivamente sin núcleo.');
       } else {
         // Respawn in 5 seconds
         this.playerRespawnTimer = 5;
@@ -1147,7 +1332,7 @@ export class ThreeGameEngine {
   private respawnPlayer() {
     this.isPlayerAlive = true;
     this.playerHp = this.maxPlayerHp;
-    this.playerPosition.set(0, 2, 60); // Base A spawn
+    this.playerPosition.set(0, 2, 40); // Safe spawn south of Base A
     this.playerVelocity.set(0, 0, 0);
     this.playerGroup.position.copy(this.playerPosition);
     this.playerGroup.visible = true;
@@ -1162,22 +1347,21 @@ export class ThreeGameEngine {
     this.callbacks.onKillFeed(killer, bot.config.name, 'Tinta Letal');
 
     if (this.canRespawnB) {
-      // Bot can respawn in 5s
-      setTimeout(() => {
-        if (this.canRespawnB) {
-          bot.config.isAlive = true;
-          bot.config.hp = bot.config.maxHp;
-          bot.group.position.set((Math.random() - 0.5) * 20, 2, -55);
-          bot.group.visible = true;
-        }
-      }, 5000);
+      this.botRespawnTimers.set(bot.config.id, this.timer.getElapsed() + 5);
     } else {
       // PERMANENT DEATH FOR THIS BOT!
       const aliveBots = this.bots.filter(b => b.config.isAlive);
       if (aliveBots.length === 0) {
-        this.callbacks.onMatchEnd('cyan', '¡VICTORIA! Todos los defensores enemigos han sido eliminados.');
+        this.endMatch('cyan', '¡Victoria! Todos los defensores enemigos han sido eliminados.');
       }
     }
+  }
+
+  private endMatch(winner: TeamId, message: string) {
+    if (this.isMatchEnded) return;
+    this.isMatchEnded = true;
+    this.isMouseDown = false;
+    this.callbacks.onMatchEnd(winner, message);
   }
 
   private createParticleBurst(pos: THREE.Vector3, colorHex: number, count: number) {
@@ -1213,6 +1397,7 @@ export class ThreeGameEngine {
 
       if (p.lifespan <= 0) {
         this.scene.remove(p.mesh);
+        this.disposeObject(p.mesh);
         this.particles.splice(i, 1);
       }
     }
@@ -1235,9 +1420,24 @@ export class ThreeGameEngine {
     // Look at player chest/head
     const lookAtPos = this.playerPosition.clone().add(new THREE.Vector3(0, 1.8, 0));
     this.camera.lookAt(lookAtPos);
+
+    const projectCore = (core: THREE.Group | null) => {
+      if (!core) return { x: 0, y: 0, visible: false };
+      const position = core.position.clone().add(new THREE.Vector3(0, 4, 0)).project(this.camera);
+      const visible = position.z >= -1 && position.z <= 1 && Math.abs(position.x) <= 1 && Math.abs(position.y) <= 1;
+      return {
+        x: (position.x + 1) * 0.5 * this.container.clientWidth,
+        y: (1 - position.y) * 0.5 * this.container.clientHeight,
+        visible
+      };
+    };
+
+    this.callbacks.onCoreScreenPositionsChange(projectCore(this.coreA_Mesh), projectCore(this.coreB_Mesh));
   }
 
   public dispose() {
+    if (this.isDisposed) return;
+    this.isDisposed = true;
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
     }
@@ -1251,10 +1451,39 @@ export class ThreeGameEngine {
     document.removeEventListener('pointerlockchange', this.handlePointerLockChange);
     window.removeEventListener('mousemove', this.handleMouseMove);
     window.removeEventListener('resize', this.handleResize);
+    window.removeEventListener('blur', this.handleWindowBlur);
+    this.botRespawnTimers.clear();
+    if (document.pointerLockElement === this.container) document.exitPointerLock?.();
+
+    this.scene.traverse((object) => {
+      if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points) {
+        this.disposeObject(object);
+      }
+    });
 
     this.renderer.dispose();
+    this.timer.dispose();
     if (this.container.contains(this.renderer.domElement)) {
       this.container.removeChild(this.renderer.domElement);
+    }
+  }
+
+  public setPaused(paused: boolean) {
+    if (this.isMatchEnded || this.isDisposed) return;
+    this.isPaused = paused;
+    this.timer.setTimescale(paused ? 0 : 1);
+    this.keys = {};
+    this.isMouseDown = false;
+    if (paused && document.pointerLockElement === this.container) document.exitPointerLock?.();
+  }
+
+  private disposeObject(object: THREE.Object3D) {
+    const renderable = object as THREE.Object3D & { geometry?: THREE.BufferGeometry; material?: THREE.Material | THREE.Material[] };
+    renderable.geometry?.dispose();
+    if (Array.isArray(renderable.material)) {
+      renderable.material.forEach((material) => material.dispose());
+    } else {
+      renderable.material?.dispose();
     }
   }
 }

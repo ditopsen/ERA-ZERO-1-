@@ -60,6 +60,7 @@ export interface CraftedItem {
   icon: string;
   perk: string;
   createdAt: number;
+  drawingPaths?: DrawingPoint[][];
 }
 
 export interface DrawingPoint {

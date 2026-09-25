@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, Zap, Sparkles, BookOpen, Volume2, VolumeX, AlertTriangle, Crosshair, Users, MapPin } from 'lucide-react';
+import { Zap, Sparkles, AlertTriangle, Crosshair, MapPin, BookOpen } from 'lucide-react';
 import { CraftedItem, KillFeedItem, MapData, TeamId } from '../types';
 
 interface HUDProps {
@@ -14,13 +14,15 @@ interface HUDProps {
   currentMap: MapData;
   isHazardActive: boolean;
   respawnTimer: number;
-  isMuted: boolean;
+  isPaused: boolean;
+  showBrushPrompt: boolean;
+  coreAWorldRef: React.RefObject<HTMLDivElement | null>;
+  coreBWorldRef: React.RefObject<HTMLDivElement | null>;
   winner: TeamId | null;
   endMessage: string;
   onOpenBrush: () => void;
   onOpenGuide: () => void;
-  onOpenLobby: () => void;
-  onToggleMute: () => void;
+  onTogglePause: () => void;
   onRestartMatch: () => void;
 }
 
@@ -36,13 +38,15 @@ export const HUD: React.FC<HUDProps> = ({
   currentMap,
   isHazardActive,
   respawnTimer,
-  isMuted,
+  isPaused,
+  showBrushPrompt,
+  coreAWorldRef,
+  coreBWorldRef,
   winner,
   endMessage,
   onOpenBrush,
   onOpenGuide,
-  onOpenLobby,
-  onToggleMute,
+  onTogglePause,
   onRestartMatch
 }) => {
   const hpPercent = Math.max(0, Math.min(100, (playerHp / maxPlayerHp) * 100));
@@ -56,65 +60,26 @@ export const HUD: React.FC<HUDProps> = ({
         <div className="absolute inset-0 border-8 border-rose-600/80 bg-rose-950/25 pointer-events-none animate-pulse transition-all duration-200" />
       )}
 
-      {/* TOP BAR: CORES HEALTH AND MATCH HEADER */}
-      <div className="flex flex-col items-center gap-2">
-        <div className="w-full max-w-4xl flex items-center justify-between gap-4">
-          {/* BASE A (CYAN) CORE */}
-          <div className="flex-1 bg-slate-900/85 backdrop-blur-md border border-cyan-500/40 rounded-xl p-3 shadow-lg shadow-cyan-950/40">
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="flex items-center gap-2">
-                <div className={`w-3 h-3 rounded-full ${canRespawnA ? 'bg-cyan-400 animate-ping' : 'bg-rose-500'}`} />
-                <span className="font-display font-bold text-sm text-cyan-300 tracking-wider">NÚCLEO ALIADO (CIAN)</span>
-              </div>
-              <span className="font-mono text-xs font-semibold text-cyan-200">{Math.round(coreA_Hp)} / 1000 HP</span>
-            </div>
-            <div className="w-full h-3 bg-slate-950 rounded-full overflow-hidden border border-cyan-900">
-              <div
-                className="h-full bg-gradient-to-r from-cyan-500 to-sky-400 transition-all duration-300"
-                style={{ width: `${coreAPercent}%` }}
-              />
-            </div>
-            <div className="mt-1 flex items-center justify-between text-[10px]">
-              <span className={canRespawnA ? 'text-emerald-400 font-medium' : 'text-rose-400 font-bold'}>
-                {canRespawnA ? '● RESPAWN ACTIVO' : '✕ RESPAWN ANULADO'}
-              </span>
-              <span className="text-slate-400">BASE SUR</span>
-            </div>
-          </div>
+      <div className="absolute left-1/2 top-4 -translate-x-1/2 text-center pointer-events-none">
+        <span className="font-display text-xs font-bold tracking-widest text-slate-300">INK BATTLE 3D</span>
+        <div className="mt-1 flex items-center justify-center gap-1 text-[11px] text-slate-400">
+          <MapPin className="h-3 w-3 text-sky-400" />
+          <span>{currentMap.name.split(':')[1] || currentMap.name}</span>
+        </div>
+      </div>
 
-          {/* CENTRAL VERSUS BADGE */}
-          <div className="flex flex-col items-center px-2">
-            <div className="bg-slate-950/90 border border-slate-700 px-3 py-1 rounded-lg text-center shadow-md">
-              <span className="font-display text-xs tracking-widest text-slate-300 font-bold">INK BATTLE 3D</span>
-            </div>
-            <div className="flex items-center gap-1 mt-1 text-[11px] text-slate-400">
-              <MapPin className="w-3 h-3 text-sky-400" />
-              <span>{currentMap.name.split(':')[1] || currentMap.name}</span>
-            </div>
-          </div>
-
-          {/* BASE B (MAGENTA) CORE */}
-          <div className="flex-1 bg-slate-900/85 backdrop-blur-md border border-pink-500/40 rounded-xl p-3 shadow-lg shadow-pink-950/40">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="font-mono text-xs font-semibold text-pink-200">{Math.round(coreB_Hp)} / 1000 HP</span>
-              <div className="flex items-center gap-2">
-                <span className="font-display font-bold text-sm text-pink-300 tracking-wider">NÚCLEO RIVAL (MAGENTA)</span>
-                <div className={`w-3 h-3 rounded-full ${canRespawnB ? 'bg-pink-400 animate-ping' : 'bg-rose-500'}`} />
-              </div>
-            </div>
-            <div className="w-full h-3 bg-slate-950 rounded-full overflow-hidden border border-pink-900">
-              <div
-                className="h-full bg-gradient-to-r from-pink-500 to-rose-400 transition-all duration-300"
-                style={{ width: `${coreBPercent}%` }}
-              />
-            </div>
-            <div className="mt-1 flex items-center justify-between text-[10px]">
-              <span className="text-slate-400">BASE NORTE</span>
-              <span className={canRespawnB ? 'text-emerald-400 font-medium' : 'text-rose-400 font-bold'}>
-                {canRespawnB ? '● RESPAWN ACTIVO' : '✕ RESPAWN ANULADO'}
-              </span>
-            </div>
-          </div>
+      <div ref={coreAWorldRef} className="absolute z-10 w-[min(220px,42vw)] -translate-x-1/2 -translate-y-[calc(100%+12px)] pointer-events-none" style={{ left: 0, top: 0, visibility: 'hidden' }}>
+        <div className="rounded border border-cyan-400/60 bg-slate-950/90 px-2.5 py-2 shadow-lg shadow-cyan-950/40">
+          <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-bold text-cyan-200"><span>NÚCLEO ALIADO</span><span>{Math.round(coreA_Hp)} / 1000 PV</span></div>
+          <div className="h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full bg-cyan-400 transition-[width] duration-200" style={{ width: `${coreAPercent}%` }} /></div>
+          <div className={`mt-1 text-[9px] ${canRespawnA ? 'text-emerald-300' : 'text-rose-300'}`}>{canRespawnA ? 'REAPARICIÓN ACTIVA' : 'REAPARICIÓN DESACTIVADA'}</div>
+        </div>
+      </div>
+      <div ref={coreBWorldRef} className="absolute z-10 w-[min(220px,42vw)] -translate-x-1/2 -translate-y-[calc(100%+12px)] pointer-events-none" style={{ left: 0, top: 0, visibility: 'hidden' }}>
+        <div className="rounded border border-pink-400/60 bg-slate-950/90 px-2.5 py-2 shadow-lg shadow-pink-950/40">
+          <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-bold text-pink-200"><span>NÚCLEO RIVAL</span><span>{Math.round(coreB_Hp)} / 1000 PV</span></div>
+          <div className="h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full bg-pink-400 transition-[width] duration-200" style={{ width: `${coreBPercent}%` }} /></div>
+          <div className={`mt-1 text-[9px] ${canRespawnB ? 'text-emerald-300' : 'text-rose-300'}`}>{canRespawnB ? 'REAPARICIÓN ACTIVA' : 'REAPARICIÓN DESACTIVADA'}</div>
         </div>
       </div>
 
@@ -142,9 +107,9 @@ export const HUD: React.FC<HUDProps> = ({
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-              <span className="font-display text-sm font-bold text-slate-100">SALUD DEL HÉROE</span>
+              <span className="font-display text-sm font-bold text-slate-100">SALUD DEL JUGADOR</span>
             </div>
-            <span className="font-mono font-bold text-sm text-cyan-300">{Math.round(playerHp)} / 100 HP</span>
+              <span className="font-mono font-bold text-sm text-cyan-300">{Math.round(playerHp)} / {maxPlayerHp} PV</span>
           </div>
           <div className="w-full h-3 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
             <div
@@ -167,8 +132,7 @@ export const HUD: React.FC<HUDProps> = ({
           </div>
         </div>
 
-        {/* CENTER ACTION: MAGIC INK BRUSH (DRAW 2D TO 3D) */}
-        <div className="flex flex-col items-center gap-2">
+        {showBrushPrompt && <div className="flex flex-col items-center gap-2">
           <button
             id="btn-open-magic-brush"
             onClick={onOpenBrush}
@@ -178,41 +142,22 @@ export const HUD: React.FC<HUDProps> = ({
             <span>PINCEL MÁGICO: DIBUJAR 2D A 3D</span>
             <span className="bg-slate-950/20 text-slate-950 font-mono text-xs px-1.5 py-0.5 rounded ml-1">Tecla E</span>
           </button>
-          <span className="text-[11px] text-slate-400">WASD: Moverse | Espacio: Salto | Clic: Disparar Tinta</span>
-        </div>
-
-        {/* RIGHT CONTROLS: GDEVELOP GUIDE & AUDIO */}
-        <div className="flex items-center gap-2">
-          <button
-            id="btn-open-gdevelop-guide"
-            onClick={onOpenGuide}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-display font-semibold text-xs px-4 py-2.5 rounded-xl shadow-lg shadow-indigo-900/40 flex items-center gap-2 transition-all cursor-pointer hover:scale-105"
-            title="Ver eventos y lógica de GDevelop 5 paso a paso"
-          >
-            <BookOpen className="w-4 h-4 text-indigo-200" />
-            <span>GUÍA EVENTOS GDEVELOP 5</span>
-          </button>
-
-          <button
-            id="btn-open-lobby"
-            onClick={onOpenLobby}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-2.5 rounded-xl border border-slate-700 transition cursor-pointer flex items-center gap-1.5"
-            title="Ajustes de Sala, Bots y Mapas"
-          >
-            <Users className="w-4 h-4 text-cyan-400" />
-            <span>Salas / Bots</span>
-          </button>
-
-          <button
-            id="btn-toggle-sound"
-            onClick={onToggleMute}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-300 p-2.5 rounded-xl border border-slate-700 transition cursor-pointer"
-            title={isMuted ? 'Activar Sonido' : 'Silenciar'}
-          >
-            {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
-          </button>
-        </div>
+        </div>}
       </div>
+
+      {isPaused && !winner && (
+        <div className="absolute inset-0 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center pointer-events-auto z-30">
+          <div className="text-center">
+            <h2 className="font-display font-bold text-3xl text-slate-100 mb-4">PARTIDA EN PAUSA</h2>
+            <button
+              onClick={onTogglePause}
+              className="px-5 py-2.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-display font-bold rounded-lg cursor-pointer"
+            >
+              REANUDAR
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* RESPAWN COUNTDOWN MODAL */}
       {respawnTimer > 0 && playerHp <= 0 && (

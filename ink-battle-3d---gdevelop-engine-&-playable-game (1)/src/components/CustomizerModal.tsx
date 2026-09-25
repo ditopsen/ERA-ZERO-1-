@@ -76,7 +76,7 @@ export const CustomizerModal: React.FC<CustomizerModalProps> = ({
               <User className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-display font-bold text-lg text-slate-100">PERSONALIZACIÓN 3D & BLOQUEO DE COLORES</h2>
+              <h2 className="font-display font-bold text-lg text-slate-100">PERSONALIZACIÓN 3D Y COLORES DE EQUIPO</h2>
               <p className="text-xs text-slate-400">Configura la apariencia de tu avatar y valida colores disponibles de equipo.</p>
             </div>
           </div>

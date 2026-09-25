@@ -5,20 +5,23 @@ import { InkBrushCanvas } from './components/InkBrushCanvas';
 import { CustomizerModal } from './components/CustomizerModal';
 import { LobbyModal } from './components/LobbyModal';
 import { GDevelopGuideModal } from './components/GDevelopGuideModal';
-import { sounds } from './game/audio';
 import { MAPS_CATALOG } from './data/gdevelopGuideData';
 import { BotConfig, BotDifficulty, CraftedItem, KillFeedItem, MapData, MapId, PlayerCustomization, TeamId } from './types';
 import confetti from 'canvas-confetti';
-import { Sparkles, User, MapPin, BookOpen, Volume2, VolumeX, Shield, Play } from 'lucide-react';
+import { User, MapPin, BookOpen, Play } from 'lucide-react';
 
 export default function App() {
   const canvasContainerRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<ThreeGameEngine | null>(null);
   const respawnIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isPausedRef = useRef(false);
+  const coreAWorldRef = useRef<HTMLDivElement | null>(null);
+  const coreBWorldRef = useRef<HTMLDivElement | null>(null);
+  const hasPlayerActedRef = useRef(false);
 
   // Player State
-  const [playerHp, setPlayerHp] = useState(100);
-  const [maxPlayerHp] = useState(100);
+  const [playerHp, setPlayerHp] = useState(200);
+  const maxPlayerHp = 200;
   const [respawnTimer, setRespawnTimer] = useState(0);
   const [isHazardActive, setIsHazardActive] = useState(false);
 
@@ -57,7 +60,9 @@ export default function App() {
   const [killFeed, setKillFeed] = useState<KillFeedItem[]>([]);
   const [winner, setWinner] = useState<TeamId | null>(null);
   const [endMessage, setEndMessage] = useState('');
-  const [isMuted, setIsMuted] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [isMatchActive, setIsMatchActive] = useState(false);
+  const [hasPlayerActed, setHasPlayerActed] = useState(false);
 
   // Modals
   const [isBrushOpen, setIsBrushOpen] = useState(false);
@@ -108,14 +113,19 @@ export default function App() {
       respawnIntervalRef.current = null;
     }
 
-    setPlayerHp(100);
+    setPlayerHp(200);
     setCoreA_Hp(1000);
     setCoreB_Hp(1000);
     setCanRespawnA(true);
     setCanRespawnB(true);
     setWinner(null);
     setEndMessage('');
+    setIsPaused(false);
+    isPausedRef.current = false;
+    hasPlayerActedRef.current = false;
+    setHasPlayerActed(false);
     setRespawnTimer(0);
+    setIsHazardActive(false);
     setKillFeed([]);
 
     const engine = new ThreeGameEngine(
@@ -131,6 +141,7 @@ export default function App() {
           if (canRespawn) {
             respawnIntervalRef.current = setInterval(() => {
               setRespawnTimer((prev) => {
+                if (isPausedRef.current) return prev;
                 if (prev <= 1) {
                   if (respawnIntervalRef.current) clearInterval(respawnIntervalRef.current);
                   return 0;
@@ -145,6 +156,16 @@ export default function App() {
           setCoreB_Hp(hpB);
           setCanRespawnA(respawnA);
           setCanRespawnB(respawnB);
+        },
+        onCoreScreenPositionsChange: (coreA, coreB) => {
+          const placeBar = (element: HTMLDivElement | null, position: { x: number; y: number; visible: boolean }) => {
+            if (!element) return;
+            element.style.left = `${position.x}px`;
+            element.style.top = `${position.y}px`;
+            element.style.visibility = position.visible ? 'visible' : 'hidden';
+          };
+          placeBar(coreAWorldRef.current, coreA);
+          placeBar(coreBWorldRef.current, coreB);
         },
         onKillFeed: (killer, victim, weapon) => {
           setKillFeed((prev) => [
@@ -183,7 +204,6 @@ export default function App() {
 
   // Initial mount
   useEffect(() => {
-    startMatch();
     return () => {
       if (engineRef.current) {
         engineRef.current.dispose();
@@ -192,18 +212,54 @@ export default function App() {
         clearInterval(respawnIntervalRef.current);
       }
     };
+  }, []);
+
+  const markPlayerActed = useCallback(() => {
+    if (hasPlayerActedRef.current) return;
+    hasPlayerActedRef.current = true;
+    setHasPlayerActed(true);
+  }, []);
+
+  const handleStartGame = useCallback(() => {
+    startMatch();
+    setIsMatchActive(true);
   }, [startMatch]);
 
   // Global key listener for 'E' (Open Magic Brush)
   useEffect(() => {
+    if (!isMatchActive) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.code === 'KeyE' || e.key === 'e' || e.key === 'E') && !isBrushOpen && !isCustomizerOpen && !isLobbyOpen && !isGuideOpen) {
+        markPlayerActed();
         setIsBrushOpen(true);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isBrushOpen, isCustomizerOpen, isLobbyOpen, isGuideOpen]);
+  }, [isMatchActive, isBrushOpen, isCustomizerOpen, isLobbyOpen, isGuideOpen, markPlayerActed]);
+
+  useEffect(() => {
+    if (!isMatchActive) return;
+    const movementKeys = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);
+    const handleFirstAction = (event: KeyboardEvent) => {
+      if (movementKeys.has(event.code)) markPlayerActed();
+      if (event.code === 'Escape' && !winner && !isBrushOpen && !isCustomizerOpen && !isLobbyOpen && !isGuideOpen) {
+        const nextPaused = !isPausedRef.current;
+        isPausedRef.current = nextPaused;
+        engineRef.current?.setPaused(nextPaused);
+        setIsPaused(nextPaused);
+      }
+    };
+    const handleCanvasAction = (event: PointerEvent) => {
+      if (event.target instanceof Node && canvasContainerRef.current?.contains(event.target)) markPlayerActed();
+    };
+    window.addEventListener('keydown', handleFirstAction);
+    canvasContainerRef.current?.addEventListener('pointerdown', handleCanvasAction);
+    return () => {
+      window.removeEventListener('keydown', handleFirstAction);
+      canvasContainerRef.current?.removeEventListener('pointerdown', handleCanvasAction);
+    };
+  }, [isMatchActive, isBrushOpen, isCustomizerOpen, isLobbyOpen, isGuideOpen, markPlayerActed, winner]);
 
   // Crafting Callback
   const handleCraftSuccess = (item: CraftedItem) => {
@@ -223,13 +279,14 @@ export default function App() {
       yellow: newCust.teamColor === 'yellow',
       green: newCust.teamColor === 'green'
     });
-    // Restart match with updated mesh
-    setTimeout(startMatch, 50);
   };
 
-  const handleToggleMute = () => {
-    const muted = sounds.toggleMute();
-    setIsMuted(muted);
+  const handleTogglePause = () => {
+    if (winner) return;
+    const nextPaused = !isPaused;
+    isPausedRef.current = nextPaused;
+    engineRef.current?.setPaused(nextPaused);
+    setIsPaused(nextPaused);
   };
 
   const handleGenerateRoomCode = () => {
@@ -246,29 +303,47 @@ export default function App() {
         tabIndex={0}
       />
 
-      {/* TOP FLOATING UTILITY BAR */}
-      <div className="absolute top-4 left-4 z-20 flex items-center gap-2 pointer-events-auto">
-        <button
-          id="btn-quick-customizer"
-          onClick={() => setIsCustomizerOpen(true)}
-          className="bg-slate-900/85 hover:bg-slate-850 border border-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded-xl shadow backdrop-blur transition flex items-center gap-1.5 cursor-pointer"
-        >
-          <User className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Personaje ({customization.gender === 'female' ? 'Mujer' : 'Hombre'})</span>
-        </button>
-
-        <button
-          id="btn-quick-lobby"
-          onClick={() => setIsLobbyOpen(true)}
-          className="bg-slate-900/85 hover:bg-slate-850 border border-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded-xl shadow backdrop-blur transition flex items-center gap-1.5 cursor-pointer"
-        >
-          <MapPin className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Mapas & IA ({botDifficulty})</span>
-        </button>
-      </div>
+      {!isMatchActive && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/75 p-5 pointer-events-auto">
+          <section className="w-full max-w-lg border border-cyan-400/40 bg-slate-950/95 p-7 shadow-2xl shadow-cyan-950/40">
+            <p className="font-mono text-xs text-cyan-300">INK BATTLE / ARENA 3D</p>
+            <h1 className="mt-2 font-display text-4xl font-bold text-slate-100">INK BATTLE 3D</h1>
+            <p className="mt-2 text-sm text-slate-400">Prepara tu personaje y el mapa antes de comenzar.</p>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                id="btn-menu-customizer"
+                onClick={() => setIsCustomizerOpen(true)}
+                className="flex min-h-12 items-center justify-center gap-2 border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100 hover:border-cyan-400"
+              >
+                <User className="h-4 w-4 text-cyan-300" /> Personaje
+              </button>
+              <button
+                id="btn-menu-lobby"
+                onClick={() => setIsLobbyOpen(true)}
+                className="flex min-h-12 items-center justify-center gap-2 border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100 hover:border-cyan-400"
+              >
+                <MapPin className="h-4 w-4 text-cyan-300" /> Mapa y bots
+              </button>
+              <button
+                onClick={() => setIsGuideOpen(true)}
+                className="col-span-2 flex min-h-10 items-center justify-center gap-2 text-xs text-slate-400 hover:text-cyan-200"
+              >
+                <BookOpen className="h-4 w-4" /> Guía del juego
+              </button>
+            </div>
+            <button
+              id="btn-start-match"
+              onClick={handleStartGame}
+              className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 bg-cyan-400 px-4 font-display font-bold text-slate-950 hover:bg-cyan-300"
+            >
+              <Play className="h-4 w-4" /> INICIAR PARTIDA
+            </button>
+          </section>
+        </div>
+      )}
 
       {/* HEADS UP DISPLAY */}
-      <HUD
+      {isMatchActive && <HUD
         playerHp={playerHp}
         maxPlayerHp={maxPlayerHp}
         coreA_Hp={coreA_Hp}
@@ -280,18 +355,20 @@ export default function App() {
         currentMap={currentMapData}
         isHazardActive={isHazardActive}
         respawnTimer={respawnTimer}
-        isMuted={isMuted}
+        isPaused={isPaused}
+        showBrushPrompt={!hasPlayerActed}
+        coreAWorldRef={coreAWorldRef}
+        coreBWorldRef={coreBWorldRef}
         winner={winner}
         endMessage={endMessage}
-        onOpenBrush={() => setIsBrushOpen(true)}
-        onOpenGuide={() => {
-          setGuideInitialModule(1);
-          setIsGuideOpen(true);
+        onOpenBrush={() => {
+          markPlayerActed();
+          setIsBrushOpen(true);
         }}
-        onOpenLobby={() => setIsLobbyOpen(true)}
-        onToggleMute={handleToggleMute}
+        onOpenGuide={() => setIsGuideOpen(true)}
+        onTogglePause={handleTogglePause}
         onRestartMatch={startMatch}
-      />
+      />}
 
       {/* MODAL 1: MAGIC INK BRUSH (2D TO 3D WEAPON/SHIELD) */}
       <InkBrushCanvas
@@ -320,7 +397,7 @@ export default function App() {
         onChangeBotDifficulty={(diff) => setBotDifficulty(diff)}
         botCount={botCount}
         onChangeBotCount={(count) => setBotCount(count)}
-        onStartMatch={startMatch}
+        onStartMatch={handleStartGame}
         roomCode={roomCode}
         onGenerateRoomCode={handleGenerateRoomCode}
       />

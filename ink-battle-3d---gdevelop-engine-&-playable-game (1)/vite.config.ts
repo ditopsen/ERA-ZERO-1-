@@ -15,9 +15,9 @@ export default defineConfig(() => {
       // Inline ALL assets (JS, CSS) directly into the HTML so it works with double-click
       assetsInlineLimit: 100_000_000,
       cssCodeSplit: false,
-      rollupOptions: {
+      rolldownOptions: {
         output: {
-          inlineDynamicImports: true,
+          codeSplitting: false,
         },
       },
     },

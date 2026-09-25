@@ -15,9 +15,16 @@ export const InkBrushCanvas: React.FC<InkBrushCanvasProps> = ({
   onCraftSuccess,
   playerColorHex
 }) => {
+  const maxInk = 100;
+  const inkCostPerPixel = 0.14;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pointsRef = useRef<DrawingPoint[]>([]);
+  const drawingPathsRef = useRef<DrawingPoint[][]>([]);
+  const lastPointRef = useRef<DrawingPoint | null>(null);
+  const inkRef = useRef(maxInk);
   const [isDrawing, setIsDrawing] = useState(false);
   const [points, setPoints] = useState<DrawingPoint[]>([]);
+  const [ink, setInk] = useState(maxInk);
   const [detectedType, setDetectedType] = useState<CraftedItemType>('sword');
   const [activeTemplate, setActiveTemplate] = useState<'free' | 'sword' | 'shield' | 'cannon'>('free');
 
@@ -31,9 +38,26 @@ export const InkBrushCanvas: React.FC<InkBrushCanvasProps> = ({
     ctx.fillStyle = '#090d16';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     drawGrid(ctx, canvas.width, canvas.height);
+    inkRef.current = maxInk;
+    setInk(maxInk);
+    setIsDrawing(false);
+    pointsRef.current = [];
+    drawingPathsRef.current = [];
+    lastPointRef.current = null;
     setPoints([]);
     setDetectedType('sword');
+    setActiveTemplate('free');
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || isDrawing || ink >= maxInk) return;
+    const timer = window.setInterval(() => {
+      const nextInk = Math.min(maxInk, inkRef.current + 2);
+      inkRef.current = nextInk;
+      setInk(nextInk);
+    }, 120);
+    return () => window.clearInterval(timer);
+  }, [isOpen, isDrawing, ink]);
 
   const drawGrid = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
     ctx.strokeStyle = '#1e293b';
@@ -59,14 +83,19 @@ export const InkBrushCanvas: React.FC<InkBrushCanvasProps> = ({
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
     return {
-      x: clientX - rect.left,
-      y: clientY - rect.top
+      x: (clientX - rect.left) * canvas.width / rect.width,
+      y: (clientY - rect.top) * canvas.height / rect.height
     };
   };
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (inkRef.current <= 0) return;
     setIsDrawing(true);
     const pt = getCanvasCoords(e);
+    const stroke = [pt];
+    pointsRef.current = stroke;
+    drawingPathsRef.current = [...drawingPathsRef.current, stroke];
+    lastPointRef.current = pt;
     setPoints([pt]);
 
     const canvas = canvasRef.current;
@@ -85,7 +114,18 @@ export const InkBrushCanvas: React.FC<InkBrushCanvasProps> = ({
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     if (!isDrawing) return;
-    const pt = getCanvasCoords(e);
+    const nextPoint = getCanvasCoords(e);
+    const lastPoint = lastPointRef.current;
+    if (!lastPoint) return;
+    const distance = Math.hypot(nextPoint.x - lastPoint.x, nextPoint.y - lastPoint.y);
+    if (distance < 1.5) return;
+    const inkAvailable = inkRef.current;
+    const maxDistance = inkAvailable / inkCostPerPixel;
+    const ratio = distance > maxDistance && distance > 0 ? maxDistance / distance : 1;
+    const pt = {
+      x: lastPoint.x + (nextPoint.x - lastPoint.x) * ratio,
+      y: lastPoint.y + (nextPoint.y - lastPoint.y) * ratio
+    };
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -94,13 +134,25 @@ export const InkBrushCanvas: React.FC<InkBrushCanvasProps> = ({
     ctx.lineTo(pt.x, pt.y);
     ctx.stroke();
 
-    const newPts = [...points, pt];
+    const segmentLength = Math.hypot(pt.x - lastPoint.x, pt.y - lastPoint.y);
+    const nextInk = Math.max(0, inkAvailable - segmentLength * inkCostPerPixel);
+    inkRef.current = nextInk;
+    setInk(nextInk);
+    const newPts = [...pointsRef.current, pt];
+    pointsRef.current = newPts;
+    drawingPathsRef.current[drawingPathsRef.current.length - 1] = newPts;
+    lastPointRef.current = pt;
     setPoints(newPts);
     analyzeStrokeShape(newPts);
+    if (nextInk <= 0) {
+      setIsDrawing(false);
+      lastPointRef.current = null;
+    }
   };
 
   const stopDrawing = () => {
     setIsDrawing(false);
+    lastPointRef.current = null;
   };
 
   const clearCanvas = () => {
@@ -111,6 +163,9 @@ export const InkBrushCanvas: React.FC<InkBrushCanvasProps> = ({
     ctx.fillStyle = '#090d16';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     drawGrid(ctx, canvas.width, canvas.height);
+    pointsRef.current = [];
+    drawingPathsRef.current = [];
+    lastPointRef.current = null;
     setPoints([]);
     setActiveTemplate('free');
   };
@@ -149,7 +204,11 @@ export const InkBrushCanvas: React.FC<InkBrushCanvasProps> = ({
   };
 
   const applyTemplate = (type: 'sword' | 'shield' | 'cannon') => {
-    setActiveTemplate(type);
+    const templateCosts = { sword: 32, shield: 42, cannon: 48 };
+    if (inkRef.current < templateCosts[type]) return;
+    const nextInk = inkRef.current - templateCosts[type];
+    inkRef.current = nextInk;
+    setInk(nextInk);
     setDetectedType(type);
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -157,6 +216,7 @@ export const InkBrushCanvas: React.FC<InkBrushCanvasProps> = ({
     if (!ctx) return;
 
     clearCanvas();
+  setActiveTemplate(type);
     ctx.strokeStyle = playerColorHex || '#06b6d4';
     ctx.lineWidth = 14;
     ctx.lineCap = 'round';
@@ -166,6 +226,23 @@ export const InkBrushCanvas: React.FC<InkBrushCanvasProps> = ({
 
     const cx = canvas.width / 2;
     const cy = canvas.height / 2;
+
+    if (type === 'sword') {
+      drawingPathsRef.current = [
+        [{ x: cx, y: cy - 130 }, { x: cx, y: cy + 90 }],
+        [{ x: cx - 40, y: cy + 40 }, { x: cx + 40, y: cy + 40 }]
+      ];
+    } else if (type === 'shield') {
+      drawingPathsRef.current = [Array.from({ length: 65 }, (_, index) => {
+        const angle = (index / 64) * Math.PI * 2;
+        return { x: cx + Math.cos(angle) * 80, y: cy + Math.sin(angle) * 80 };
+      })];
+    } else {
+      drawingPathsRef.current = [
+        [{ x: cx - 70, y: cy + 30 }, { x: cx + 70, y: cy - 30 }],
+        [{ x: cx - 20, y: cy + 70 }, { x: cx + 20, y: cy - 70 }]
+      ];
+    }
 
     if (type === 'sword') {
       ctx.beginPath();
@@ -189,6 +266,7 @@ export const InkBrushCanvas: React.FC<InkBrushCanvasProps> = ({
   };
 
   const handleForge = () => {
+    if (!drawingPathsRef.current.some((path) => path.length > 1)) return;
     let item: CraftedItem;
 
     if (detectedType === 'sword') {
@@ -235,6 +313,7 @@ export const InkBrushCanvas: React.FC<InkBrushCanvasProps> = ({
       };
     }
 
+    item.drawingPaths = drawingPathsRef.current.map((path) => path.map(({ x, y }) => ({ x, y })));
     onCraftSuccess(item);
     onClose();
   };
@@ -326,6 +405,14 @@ export const InkBrushCanvas: React.FC<InkBrushCanvasProps> = ({
               Detectado: <strong className="text-cyan-300 uppercase">{detectedType === 'sword' ? 'Espada 3D' : detectedType === 'shield' ? 'Escudo 3D' : 'Cañón 3D'}</strong>
             </span>
           </div>
+        </div>
+
+        <div className="mt-3 flex items-center gap-3 text-xs" aria-label={`Tinta disponible: ${Math.floor(ink)} por ciento`}>
+          <span className="font-semibold text-slate-300">Tinta</span>
+          <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
+            <div className={`h-full transition-[width] duration-100 ${ink < 20 ? 'bg-rose-400' : 'bg-cyan-400'}`} style={{ width: `${ink}%` }} />
+          </div>
+          <span className="w-16 text-right font-mono text-slate-300">{Math.floor(ink)} / 100</span>
         </div>
 
         {/* FORGE STATS & TRIGGER */}
