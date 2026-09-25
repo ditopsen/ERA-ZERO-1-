@@ -1,0 +1,6 @@
+{
+  "name": "INK BATTLE 3D - GDevelop Engine & Playable Game",
+  "description": "Videojuego 3D interactivo y guía técnica paso a paso para GDevelop 5 con eventos, mapas interactivos, bots con IA, pincel mágico 2D a 3D y combate de bases.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
